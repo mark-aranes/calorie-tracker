@@ -1011,14 +1011,78 @@ function doReset() {
 
 /* ================= navigation ================= */
 
-function switchTab(next) {
+const TAB_ORDER = ['today', 'add', 'trends', 'you'];
+let swapTimer = null;
+let liveAnims = [];
+
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Cross-fade two screens, sliding along the tab bar's reading direction. */
+function slideBetween(fromEl, toEl, forward) {
+  // An interrupted switch must never leave a screen stranded mid-transition
+  // with pointer-events off, which would silently swallow taps.
+  clearTimeout(swapTimer);
+  for (const el of $$('.screen.leaving')) el.classList.remove('leaving');
+  for (const a of liveAnims) a.cancel();
+  liveAnims = [];
+
+  const dx = forward ? 1 : -1;
+  const EASE = 'cubic-bezier(.32,.72,0,1)';
+
+  fromEl.classList.add('leaving');
+  const out = fromEl.animate(
+    [{ transform: 'translateX(0)', opacity: 1 },
+     { transform: `translateX(${-dx * 20}%)`, opacity: 0 }],
+    { duration: 150, easing: EASE, fill: 'forwards' },
+  );
+  liveAnims.push(out);
+
+  swapTimer = setTimeout(() => {
+    fromEl.hidden = true;
+    fromEl.classList.remove('leaving');
+    out.cancel();
+    liveAnims.push(toEl.animate(
+      [{ transform: `translateX(${dx * 20}%)`, opacity: 0 },
+       { transform: 'translateX(0)', opacity: 1 }],
+      { duration: 230, easing: EASE },
+    ));
+  }, 120);
+}
+
+/** Small overshoot on the newly selected tab icon. */
+function popTabIcon(name) {
+  const icon = $(`.tab[data-tab="${CSS.escape(name)}"] svg`);
+  if (!icon || reducedMotion()) return;
+  icon.animate(
+    [{ transform: 'scale(1)' },
+     { transform: 'scale(1.22)', offset: 0.42 },
+     { transform: 'scale(1)' }],
+    { duration: 340, easing: 'cubic-bezier(.34,1.4,.64,1)' },
+  );
+}
+
+function switchTab(next, { animate = true } = {}) {
+  const prev = tab;
+  const fromEl = $(`#screen-${prev}`);
+  const toEl = $(`#screen-${next}`);
+  const canSlide = animate && prev !== next && fromEl && toEl && !reducedMotion();
+  const forward = TAB_ORDER.indexOf(next) > TAB_ORDER.indexOf(prev);
+
   tab = next;
-  for (const s of $$('.screen')) s.hidden = s.id !== `screen-${next}`;
+
+  for (const s of $$('.screen')) {
+    if (canSlide && (s === fromEl || s === toEl)) { s.hidden = false; continue; }
+    s.hidden = s !== toEl;
+  }
+  if (!canSlide && fromEl && fromEl !== toEl) fromEl.hidden = true;
+
   for (const b of $$('.tab')) b.classList.toggle('active', b.dataset.tab === next);
-  const bar = $('#appBar');
-  bar.hidden = next === 'you';
+  $('#appBar').hidden = next === 'you';
   window.scrollTo({ top: 0, behavior: 'instant' });
   renderAll();
+
+  if (canSlide) slideBetween(fromEl, toEl, forward);
+  if (animate && prev !== next) popTabIcon(next);
 }
 
 function setDate(next) {

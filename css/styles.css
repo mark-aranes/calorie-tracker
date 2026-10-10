@@ -124,8 +124,21 @@ main {
   max-width: 640px;
   margin: 0 auto;
   padding: 14px 12px calc(var(--tabbar-h) + var(--safe-b) + 24px);
+  /* Every screen occupies the same cell so a transition can cross-fade them
+     in place instead of stacking them vertically. */
+  display: grid;
+  grid-template-areas: "s";
+  /* A sliding screen is translated sideways; without clipping that widens the
+     document, which on a phone inflates the layout viewport and drags the
+     fixed tab bar out of reach. `clip` avoids turning this into a scroll
+     container the way `hidden` would. */
+  overflow-x: clip;
 }
-.screen { display: flex; flex-direction: column; gap: 12px; }
+/* min-width:0 stops a grid item refusing to shrink to its content's
+   min-content width, which would widen the column past the viewport. */
+.screen { grid-area: s; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+/* Mid-exit: ignore taps so the screen underneath is reachable immediately. */
+.screen.leaving { pointer-events: none; }
 [hidden] { display: none !important; }
 
 .section-head {
