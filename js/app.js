@@ -154,16 +154,22 @@ function renderToday() {
   const isToday = date === store.today();
   renderDayStats(tg, isToday);
 
-  const advice = buildAdvice({
-    totals, tg, profile, day,
-    progress: isToday ? dayProgress() : 1,
-    isToday, now: new Date(),
-    water: store.waterFor(date),
-    timing: timingInsights(store.getState().days, [date]),
-  });
-  renderAdvice($('#advice'), advice, 1);
+  // With nothing logged, the empty state in the meals section is the message;
+  // advice would just repeat it and push the way in below the fold.
+  if (totals.count > 0) {
+    const advice = buildAdvice({
+      totals, tg, profile, day,
+      progress: isToday ? dayProgress() : 1,
+      isToday, now: new Date(),
+      water: store.waterFor(date),
+      timing: timingInsights(store.getState().days, [date]),
+    });
+    renderAdvice($('#advice'), advice, 1);
+  } else {
+    $('#advice').innerHTML = '';
+  }
 
-  renderMeals(day);
+  renderMeals(day, tg, totals);
   renderActivityList(day);
 }
 
@@ -289,7 +295,7 @@ function renderAdvice(container, list, lead = 1) {
   container.append(chips);
 }
 
-function renderMeals(day) {
+function renderMeals(day, tg, totals) {
   const wrap = $('#meals');
   wrap.innerHTML = '';
   const groups = MEALS.map((m) => [m, (day.food || []).filter((e) => e.meal === m)]);
@@ -299,7 +305,9 @@ function renderMeals(day) {
     const yesterday = store.getDay(store.addDays(date, -1));
     const canRepeat = (yesterday.food || []).length > 0;
     wrap.append(h('div', { class: 'empty' },
-      h('p', {}, 'No food logged for this day.'),
+      h('p', {}, 'Nothing logged yet.'),
+      h('p', { class: 'empty-sub' },
+        `Your budget is ${(tg.kcal + totals.burned).toLocaleString()} kcal today. Log your first meal whenever you are ready.`),
       btn('Add your first food', { kind: 'btn-primary', onclick: () => openFoodPicker() }),
       canRepeat && date === store.today()
         ? btn(`Repeat yesterday (${yesterday.food.length} items)`, {
@@ -582,7 +590,11 @@ function renderYou() {
  * An item with a `grams` field is a log entry; otherwise it is a database food.
  */
 function openFoodPicker(item) {
-  const entry = item && item.grams !== undefined ? item : null;
+  // Called with nothing from the empty state: there is no food to open, so
+  // send the user to search rather than dereferencing a missing item.
+  if (!item) { switchTab('add'); return; }
+
+  const entry = item.grams !== undefined ? item : null;
   const food = entry ? (lookupFood(item.id) || customAsFood(item)) : item;
   const body = h('div', {});
 

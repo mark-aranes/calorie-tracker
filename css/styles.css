@@ -437,6 +437,7 @@ main {
   display: flex; flex-direction: column; gap: 12px; align-items: center;
 }
 .empty p { margin: 0; color: var(--text-dim); font-size: .9rem; }
+.empty-sub { font-size: .82rem !important; color: var(--text-faint) !important; }
 .empty.small { padding: 16px; }
 
 /* ---------- charts ---------- */

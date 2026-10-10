@@ -134,11 +134,9 @@ export function buildAdvice({ totals, tg, profile, day, progress, isToday, now, 
   const overPct = budget > 0 ? (net / budget - 1) * 100 : 0;
   const expected = budget * progress;
 
-  // 1. Where the day stands.
-  if (totals.count === 0) {
-    out.push(advise('info', 'Nothing logged yet',
-      `Your budget for today is ${budget.toLocaleString()} kcal. Start with your first meal whenever you are ready.`));
-  } else if (overPct > 12) {
+  // 1. Where the day stands. With nothing logged the empty-state card in the
+  // meals section carries this, so callers skip the advice list entirely.
+  if (overPct > 12) {
     out.push(advise('warn', `${Math.round(overPct)}% over budget`,
       `You are ${Math.round(overPct * 0.01 * budget)} kcal above today's target. Nothing is lost by one day — keep protein up and make the next meal lighter and higher in vegetables.`));
   } else if (left > budget * 0.25 && progress > 0.6) {
