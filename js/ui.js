@@ -41,10 +41,64 @@ export function toast(msg) {
   toastTimer = setTimeout(() => { el.hidden = true; }, 2200);
 }
 
+/* ---------- confirm dialog ---------- */
+
+let dialogResolve = null;
+
+export const dialogIsOpen = () => $('#dialog').classList.contains('show');
+
+function settleDialog(value) {
+  const dlg = $('#dialog');
+  if (!dialogIsOpen()) return;
+  dlg.classList.remove('show');
+  $('#dialogBackdrop').classList.remove('show');
+  document.body.classList.remove('dialog-open');
+  const resolve = dialogResolve;
+  dialogResolve = null;
+  if (resolve) resolve(value);
+}
+
+/**
+ * Yes/No prompt. Resolves true for Yes, false for No or dismissing.
+ * Uses real buttons rather than window.confirm so it matches the app and
+ * is legible on a phone.
+ */
+export function confirmDialog({ title, body = '', yes = 'Yes', no = 'No', danger = true }) {
+  if (dialogIsOpen()) return Promise.resolve(false);
+  $('#dlgTitle').textContent = title;
+  $('#dlgBody').textContent = body;
+  $('#dlgBody').hidden = !body;
+  $('#dlgYes').textContent = yes;
+  $('#dlgNo').textContent = no;
+  $('#dlgYes').className = `btn ${danger ? 'btn-danger' : 'btn-primary'}`;
+
+  return new Promise((resolve) => {
+    dialogResolve = resolve;
+    $('#dialog').classList.add('show');
+    $('#dialogBackdrop').classList.add('show');
+    document.body.classList.add('dialog-open');
+    // Focus the safe option so an accidental double-tap cannot exit.
+    requestAnimationFrame(() => $('#dlgNo').focus());
+  });
+}
+
+export const dismissDialog = () => settleDialog(false);
+
+export function initDialog() {
+  $('#dlgYes').addEventListener('click', () => settleDialog(true));
+  $('#dlgNo').addEventListener('click', () => settleDialog(false));
+  $('#dialogBackdrop').addEventListener('click', () => settleDialog(false));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') settleDialog(false);
+  });
+}
+
 /* ---------- bottom sheet ---------- */
 
 let onCloseCb = null;
 let clearTimer = null;
+
+export const sheetIsOpen = () => $('#sheet').classList.contains('open');
 
 export function openSheet(content, { title } = {}) {
   const sheet = $('#sheet');

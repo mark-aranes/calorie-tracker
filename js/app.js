@@ -7,7 +7,8 @@ import {
 } from './nutrition.js';
 import { calorieChart, weightChart, macroCharts } from './charts.js';
 import {
-  $, $$, h, toast, openSheet, closeSheet, initSheet,
+  $, $$, h, toast, openSheet, closeSheet, initSheet, initDialog,
+  confirmDialog, dismissDialog, sheetIsOpen,
   numberField, segmented, radioGroup, selectField, btn, fmtKcal, fmtQty, esc,
 } from './ui.js';
 
@@ -1061,6 +1062,71 @@ function popTabIcon(name) {
   );
 }
 
+/** Slide the tab bar's indicator under the selected tab. */
+function moveTabIndicator(animate = true) {
+  const ind = $('#tabIndicator');
+  const btn = $(`.tab[data-tab="${CSS.escape(tab)}"]`);
+  if (!ind || !btn) return;
+  const centre = btn.offsetLeft + btn.offsetWidth / 2;
+  if (!animate) {
+    ind.classList.add('no-anim');
+    // Flush so the first position is not animated in from zero.
+    void ind.offsetWidth;
+  }
+  ind.style.width = '20px';
+  ind.style.transform = `translateX(${centre - 10}px)`;
+  ind.classList.add('on');
+  if (!animate) {
+    void ind.offsetWidth;
+    ind.classList.remove('no-anim');
+  }
+}
+
+let exiting = false;
+let exitPromptOpen = false;
+
+/**
+ * Back button handling, most useful action first:
+ *   1. an open sheet closes
+ *   2. a back-dated day returns to today
+ *   3. another tab returns to Today
+ *   4. only at the root does it ask before leaving
+ * A history guard entry keeps the first press from dropping straight out.
+ */
+function initBackGuard() {
+  if (!history.pushState) return;
+
+  const arm = () => { try { history.pushState({ ctGuard: true }, ''); } catch { /* ignore */ } };
+  arm();
+
+  window.addEventListener('popstate', async () => {
+    if (exiting) return;
+    arm();
+
+    // A second back while the prompt is open dismisses it.
+    if (exitPromptOpen) { exitPromptOpen = false; dismissDialog(); return; }
+    if (sheetIsOpen()) { closeSheet(); return; }
+    if (date !== store.today()) { setDate(store.today()); switchTab('today'); return; }
+    if (tab !== 'today') { switchTab('today'); return; }
+
+    exitPromptOpen = true;
+    const leave = await confirmDialog({
+      title: 'Are you sure you want to close the app?',
+      body: 'Everything you have logged is saved on this device.',
+      yes: 'Yes',
+      no: 'No',
+    });
+    exitPromptOpen = false;
+    if (!leave) return;
+
+    exiting = true;
+    // window.close() closes an installed PWA on most Android builds; the
+    // history fallback covers browsers that refuse it.
+    window.close();
+    setTimeout(() => history.back(), 60);
+  });
+}
+
 function switchTab(next, { animate = true } = {}) {
   const prev = tab;
   const fromEl = $(`#screen-${prev}`);
@@ -1083,6 +1149,7 @@ function switchTab(next, { animate = true } = {}) {
 
   if (canSlide) slideBetween(fromEl, toEl, forward);
   if (animate && prev !== next) popTabIcon(next);
+  moveTabIndicator(animate && prev !== next);
 }
 
 function setDate(next) {
@@ -1245,6 +1312,8 @@ function initEvents() {
   }
 
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  addEventListener('resize', () => moveTabIndicator(false));
+  moveTabIndicator(false);
 }
 
 function initInstallPrompt() {
@@ -1287,6 +1356,8 @@ function initServiceWorker() {
 
 function boot() {
   initSheet();
+  initDialog();
+  initBackGuard();
   initEvents();
   initInstallPrompt();
   initServiceWorker();
