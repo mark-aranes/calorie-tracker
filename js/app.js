@@ -917,6 +917,50 @@ function prettyLabel(iso) {
   });
 }
 
+function openDateSheet() {
+  const body = h('div', {});
+  const todayISO = store.today();
+
+  const quick = [
+    ['Today', todayISO],
+    ['Yesterday', store.addDays(todayISO, -1)],
+    ['2 days ago', store.addDays(todayISO, -2)],
+    ['3 days ago', store.addDays(todayISO, -3)],
+    ['1 week ago', store.addDays(todayISO, -7)],
+    ['2 weeks ago', store.addDays(todayISO, -14)],
+  ];
+
+  const list = h('div', { class: 'date-list' });
+  for (const [label, iso] of quick) {
+    const count = (store.getDay(iso).food || []).length;
+    list.append(h('button', {
+      type: 'button',
+      class: `date-opt${iso === date ? ' current' : ''}`,
+      onclick: () => { closeSheet(); setDate(iso); switchTab('today'); },
+    },
+      h('span', { class: 'date-opt-main' }, label),
+      h('span', { class: 'date-opt-sub' },
+        `${count ? `${count} ${count === 1 ? 'item' : 'items'}` : 'nothing logged'}`),
+    ));
+  }
+  body.append(list);
+
+  // A visible native picker for anything older.
+  const picker = h('input', { type: 'date', id: 'datePick', value: date, max: todayISO });
+  picker.addEventListener('change', () => {
+    if (!picker.value) return;
+    closeSheet();
+    setDate(picker.value);
+    switchTab('today');
+  });
+  body.append(h('label', { class: 'field', for: 'datePick' },
+    h('span', { class: 'field-label' }, 'Go to a date'),
+    h('div', { class: 'field-row' }, picker),
+  ));
+
+  openSheet(body, { title: 'Jump to date' });
+}
+
 function renderAll() {
   // Before onboarding there is no profile, so there is nothing to compute yet.
   if (!store.getProfile()) return;
@@ -968,15 +1012,9 @@ function initEvents() {
   $('#todayBtn').addEventListener('click', () => setDate(store.today()));
   $('#themeBtn').addEventListener('click', cycleTheme);
 
-  $('#dateLabel').addEventListener('click', () => {
-    const input = h('input', { type: 'date', value: date, max: store.today(), class: 'hidden-date-input' });
-    input.addEventListener('change', () => {
-      if (input.value) { setDate(input.value); switchTab('today'); }
-      input.remove();
-    });
-    document.body.append(input);
-    input.click();
-  });
+  // iOS Safari will not open a date picker from a programmatic .click() on a
+  // hidden input, so offer a real sheet instead.
+  $('#dateLabel').addEventListener('click', openDateSheet);
 
   const search = $('#foodSearch');
   let searchTimer;
@@ -1060,14 +1098,18 @@ function boot() {
 
   store.subscribe(() => renderAll());
 
-  if (!store.getProfile()) {
-    $('#boot')?.remove();
+  // The boot overlay sits at z-index 200 over everything. If a render throws
+  // before it is removed, the whole app becomes untouchable — so it always goes.
+  try {
     switchTab('today');
-    maybeOnboard();
-  } else {
-    renderAll();
+    if (!store.getProfile()) maybeOnboard();
+  } catch (err) {
+    console.error('Startup failed', err);
+    toast('Something went wrong starting up. Try reloading.');
+  } finally {
     $('#boot')?.remove();
   }
+
   setInterval(() => { if (tab === 'today' && date === store.today()) renderToday(); }, 60000);
 }
 

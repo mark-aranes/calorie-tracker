@@ -44,10 +44,15 @@ export function toast(msg) {
 /* ---------- bottom sheet ---------- */
 
 let onCloseCb = null;
+let clearTimer = null;
 
 export function openSheet(content, { title } = {}) {
   const sheet = $('#sheet');
   const body = $('#sheetBody');
+
+  // A pending close() would otherwise wipe the content we are about to add.
+  clearTimeout(clearTimer);
+
   body.innerHTML = '';
   if (title) body.append(h('h2', { class: 'sheet-title' }, title));
   body.append(typeof content === 'string' ? h('div', { html: content }) : content);
@@ -62,7 +67,8 @@ export function closeSheet() {
   if (!sheet.classList.contains('open')) return;
   sheet.classList.remove('open');
   document.body.classList.remove('sheet-open');
-  setTimeout(() => { $('#sheetBody').innerHTML = ''; }, 260);
+  clearTimeout(clearTimer);
+  clearTimer = setTimeout(() => { $('#sheetBody').innerHTML = ''; }, 260);
   if (onCloseCb) { onCloseCb(); onCloseCb = null; }
 }
 
@@ -119,15 +125,24 @@ export function segmented(options, value, onPick) {
 
 export function radioGroup(name, options, value) {
   const wrap = h('div', { class: 'radio-grid' });
+  const sync = () => {
+    for (const input of wrap.querySelectorAll('input')) {
+      input.closest('.radio').classList.toggle('selected', input.checked);
+    }
+  };
   for (const o of options) {
     const id = `${name}-${o.value}`;
-    const input = h('input', { type: 'radio', name, id, value: o.value, checked: o.value === value });
+    const input = h('input', {
+      type: 'radio', name, id, value: o.value, checked: o.value === value,
+      onchange: sync,
+    });
     wrap.append(h('label', { class: 'radio', for: id },
       input,
       h('span', { class: 'radio-label' }, o.label),
       o.hint ? h('span', { class: 'radio-hint' }, o.hint) : null,
     ));
   }
+  sync();
   return wrap;
 }
 
