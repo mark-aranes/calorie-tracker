@@ -1,6 +1,14 @@
-/* Calorie Tracker service worker — full offline app shell. */
+/* Calorie Tracker service worker — full offline app shell.
+ *
+ * Assets are served cache-first for an instant offline start, then refreshed
+ * from the network in the background. A deploy therefore reaches installed
+ * clients on their next launch without needing a version bump.
+ *
+ * Bump VERSION when you want to force every client to drop its cache at once
+ * (a rebuild from scratch, e.g. after changing the precache list).
+ */
 
-const VERSION = 'ct-v1';
+const VERSION = 'ct-v2';
 const SHELL = [
   './',
   './index.html',
@@ -15,6 +23,7 @@ const SHELL = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './icons/apple-touch-icon-180.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -42,38 +51,28 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Navigations: serve the cached shell immediately, refresh in background.
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      caches.match('./index.html').then((cached) => {
-        const network = fetch(request)
-          .then((res) => {
-            if (res && res.ok) {
-              const copy = res.clone();
-              caches.open(VERSION).then((c) => c.put('./index.html', copy));
-            }
-            return res;
-          })
-          .catch(() => cached);
-        return cached || network;
-      })
-    );
-    return;
-  }
-
-  // Everything else: cache first, then fill the cache.
+  // Only ever read from this version's cache, never a stale one.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request)
+    (async () => {
+      const cache = await caches.open(VERSION);
+
+      // Navigations resolve to the cached shell so the app opens offline.
+      const key = request.mode === 'navigate' ? './index.html' : request;
+
+      const network = fetch(request)
         .then((res) => {
-          if (res && res.ok && res.type === 'basic') {
-            const copy = res.clone();
-            caches.open(VERSION).then((c) => c.put(request, copy));
-          }
+          if (res && res.ok && res.type === 'basic') cache.put(key, res.clone());
           return res;
         })
-        .catch(() => cached);
-    })
+        .catch(() => null);
+
+      // Keep the worker alive long enough to finish the background refresh.
+      event.waitUntil(network);
+
+      const cached = await cache.match(key);
+      if (cached) return cached;
+
+      return (await network) || new Response('', { status: 504, statusText: 'Offline' });
+    })()
   );
 });
