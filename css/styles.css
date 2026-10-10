@@ -70,16 +70,13 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 
 /* ---------- boot ---------- */
 
+/* The splash. Its critical styles are inlined in <head> so it covers the
+   viewport before this file loads; this rule only carries the theme-aware
+   background, which agrees with the inline copy. */
 .boot {
   position: fixed; inset: 0; display: grid; place-items: center;
   background: var(--bg); z-index: 200;
 }
-.boot-spinner {
-  width: 34px; height: 34px; border-radius: 50%;
-  border: 3px solid var(--border); border-top-color: var(--accent);
-  animation: spin .8s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- app bar ---------- */
 

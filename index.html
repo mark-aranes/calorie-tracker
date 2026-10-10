@@ -10,6 +10,19 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Calories">
+<style>
+  /* Critical splash styles, inlined so the launch screen is styled and covering
+     the viewport before css/styles.css can arrive. Without these the splash is
+     an unstyled in-flow div that hides nothing, and the raw markup shows
+     through in the gap. */
+  html { background: #0f1115; }
+  body { margin: 0; }
+  #boot { position: fixed; inset: 0; z-index: 200; background: #0f1115; }
+  @media (prefers-color-scheme: light) {
+    html { background: #f4f6f8; }
+    #boot { background: #f4f6f8; }
+  }
+</style>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
@@ -17,7 +30,7 @@
 </head>
 <body>
 
-<div id="boot" class="boot"><div class="boot-spinner"></div></div>
+<div id="boot" class="boot" aria-hidden="true"></div>
 
 <header class="app-bar" id="appBar">
   <div class="app-bar-left">
