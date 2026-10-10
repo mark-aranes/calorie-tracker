@@ -128,14 +128,29 @@ export const getProfile = () => state.profile;
 /* ---------- day log ---------- */
 
 function day(iso) {
-  if (!state.days[iso]) state.days[iso] = { food: [], activity: [] };
+  if (!state.days[iso]) state.days[iso] = { food: [], activity: [], water: [] };
   const d = state.days[iso];
   if (!d.food) d.food = [];
   if (!d.activity) d.activity = [];
+  if (!d.water) d.water = [];
   return d;
 }
 
-export const getDay = (iso) => state.days[iso] || { food: [], activity: [] };
+export const getDay = (iso) => state.days[iso] || { food: [], activity: [], water: [] };
+
+export const waterFor = (iso) =>
+  (state.days[iso]?.water || []).reduce((s, w) => s + (w.ml || 0), 0);
+
+export function addWater(iso, ml) {
+  day(iso).water.push({ id: uid(), ml, ts: Date.now() });
+  emit();
+}
+
+export function removeWater(iso, id) {
+  const d = day(iso);
+  d.water = d.water.filter((w) => w.id !== id);
+  emit();
+}
 
 export function addFoodEntry(iso, entry) {
   day(iso).food.push({ id: uid(), ts: Date.now(), ...entry });
@@ -164,6 +179,7 @@ export function copyDay(fromIso, toIso) {
   const src = getDay(fromIso);
   day(toIso).food.push(...src.food.map((e) => ({ ...e, id: uid(), ts: Date.now() })));
   day(toIso).activity.push(...src.activity.map((e) => ({ ...e, id: uid(), ts: Date.now() })));
+  day(toIso).water.push(...(src.water || []).map((w) => ({ ...w, id: uid(), ts: Date.now() })));
   emit();
 }
 

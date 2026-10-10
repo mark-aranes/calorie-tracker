@@ -77,6 +77,8 @@
       </div>
     </div>
 
+    <div class="day-stats" id="dayStats"></div>
+
     <div id="advice" class="advice"></div>
 
     <div class="section-head">
@@ -120,6 +122,15 @@
       </div>
     </div>
     <div class="card">
+      <h3>Macros vs target</h3>
+      <div id="macroChart" class="chart"></div>
+      <div class="legend">
+        <span><i class="dot dot-hit"></i>On target</span>
+        <span><i class="dot dot-under"></i>Under 60%</span>
+        <span><i class="dot dot-over"></i>Over 110%</span>
+      </div>
+    </div>
+    <div class="card">
       <h3>Averages</h3>
       <div class="avg-grid" id="avgGrid"></div>
     </div>
@@ -127,6 +138,7 @@
       <h3>Weight</h3>
       <div id="weightChart" class="chart"></div>
       <div class="weight-trend" id="weightTrend"></div>
+      <div class="projection" id="weightProjection"></div>
     </div>
     <div class="card">
       <h3>Trends &amp; patterns</h3>

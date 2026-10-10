@@ -123,7 +123,7 @@ const PROTEINY = /Protein|Dairy|chicken|beef|pork|turkey|lamb|salmon|tuna|cod|ti
 /**
  * Personalised, time-aware coaching for the selected day.
  */
-export function buildAdvice({ totals, tg, profile, day, progress, isToday, now }) {
+export function buildAdvice({ totals, tg, profile, day, progress, isToday, now, water = 0, timing = null }) {
   const out = [];
   if (!tg) return out;
 
@@ -189,6 +189,22 @@ export function buildAdvice({ totals, tg, profile, day, progress, isToday, now }
       `Only ${Math.round(totals.fibre)} g of ${tg.fibre} g. Vegetables, oats, beans, whole grains and fruit with the skin are the quickest way to close the gap.`));
   }
 
+  // 5b. Hydration.
+  if (water > 0 || tg.water > 0) {
+    if (water >= tg.water) {
+      out.push(advise('good', 'Hydration on track', `${water.toLocaleString()} ml logged against a ${tg.water.toLocaleString()} ml target.`));
+    } else if (water < tg.water * 0.5 && progress > 0.6) {
+      out.push(advise('tip', 'Light on fluids',
+        `${water.toLocaleString()} ml so far, roughly ${Math.round((tg.water * 0.35 - water) / 50)} glasses short of a ${tg.water.toLocaleString()} ml target. Water needs no calories and is easy to forget until the evening.`));
+    }
+  }
+
+  // 5c. Late-evening eating, same-day entries only.
+  if (timing && timing.analysed >= 3 && timing.late >= 2) {
+    out.push(advise('tip', 'Late-night eating',
+      `${timing.late} of ${timing.analysed} meals logged after 21:00 today. Late eating is the easiest thing to change and often the biggest one — it changes what you eat the next morning more than it changes today.`));
+  }
+
   // 6. Food quality from what is actually logged.
   if (totals.count > 0) {
     if (categoryCount(day, ['Vegetables']) === 0 && eaten > tg.kcal * 0.4) {
@@ -237,6 +253,169 @@ export function buildAdvice({ totals, tg, profile, day, progress, isToday, now }
   }
 
   return out.slice(0, 6);
+}
+
+/* ---------- weight trend & goal projection ---------- */
+
+/** Local ISO helpers so this module stays free of store/UI dependencies. */
+function isoOf(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function shiftISO(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const x = new Date(y, m - 1, d + n);
+  return isoOf(x);
+}
+
+function todayISO() {
+  return isoOf(new Date());
+}
+
+/**
+ * Least-squares slope through the weigh-ins.
+ * Endpoints alone are badly skewed by one odd reading, so we fit a line
+ * through every point instead. Needs at least three to be meaningful.
+ */
+export function weightTrend(weights) {
+  if (!weights || weights.length < 3) return null;
+  const t0 = new Date(weights[0].date + 'T00:00:00').getTime();
+  const xs = weights.map((w) => (new Date(w.date + 'T00:00:00').getTime() - t0) / 86400000);
+  const ys = weights.map((w) => w.kg);
+  const n = xs.length;
+
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - mx;
+    num += dx * (ys[i] - my);
+    den += dx * dx;
+  }
+  if (!den) return null;
+
+  const perDay = num / den;
+  return {
+    perWeek: perDay * 7,
+    perDay,
+    first: ys[0],
+    last: ys[n - 1],
+    change: ys[n - 1] - ys[0],
+    spanDays: xs[n - 1] - xs[0],
+    points: n,
+  };
+}
+
+/**
+ * Where current behaviour leads, relative to a goal weight.
+ * Returns one of: reached / stalled / onTrack / away, or null when there is
+ * not enough data to say anything honest.
+ */
+export function projectGoal(weights, goalKg) {
+  if (!goalKg || !weights || !weights.length) return null;
+  const current = weights[weights.length - 1].kg;
+  const toGo = current - goalKg;
+
+  if (Math.abs(toGo) < 0.05) {
+    return { status: 'reached', current, goalKg, toGo: 0, rate: null, days: 0 };
+  }
+
+  const trend = weightTrend(weights);
+  if (!trend || trend.spanDays < 7) {
+    // Too little history for the rate to mean anything.
+    return { status: 'unknown', current, goalKg, toGo, rate: null, days: null };
+  }
+
+  const rate = trend.perWeek;
+  if (Math.abs(rate) < 0.02) {
+    return { status: 'stalled', current, goalKg, toGo, rate, days: null };
+  }
+
+  const towardGoal = Math.sign(-toGo) === Math.sign(rate);
+  const days = Math.round((Math.abs(toGo) / Math.abs(rate)) * 7);
+  return {
+    status: towardGoal ? 'onTrack' : 'away',
+    current, goalKg, toGo, rate, days,
+    eta: shiftISO(todayISO(), days),
+  };
+}
+
+/* ---------- streaks ---------- */
+
+/**
+ * Two different numbers, deliberately:
+ *  - logging  : consecutive days with any entry, tolerating "today not yet logged"
+ *  - onTarget : consecutive completed days within +-10% of budget.
+ *               Today is excluded because a half-finished day would count as
+ *               a success it has not had yet.
+ */
+export function streaks(days, tg, today = todayISO()) {
+  const foodOf = (iso) => days[iso]?.food || [];
+  const logged = (iso) => foodOf(iso).length > 0;
+  const kcalOf = (iso) => foodOf(iso).reduce((s, e) => s + (e.kcal || 0), 0);
+  const burnedOf = (iso) =>
+    (days[iso]?.activity || []).reduce((s, a) => s + (a.kcal || 0), 0);
+  const hitTarget = (iso) => {
+    const budget = tg.kcal + burnedOf(iso);
+    if (budget <= 0 || !logged(iso)) return false;
+    return Math.abs((kcalOf(iso) - budget) / budget) <= 0.1;
+  };
+
+  const GUARD = 3650;
+  let logging = 0;
+  let cursor = logged(today) ? today : shiftISO(today, -1);
+  while (logging < GUARD && logged(cursor)) {
+    logging++;
+    cursor = shiftISO(cursor, -1);
+  }
+
+  let onTarget = 0;
+  let c2 = shiftISO(today, -1);
+  while (onTarget < GUARD && hitTarget(c2)) {
+    onTarget++;
+    c2 = shiftISO(c2, -1);
+  }
+
+  return { logging, onTarget, todayLogged: logged(today) };
+}
+
+/* ---------- meal timing ---------- */
+
+/**
+ * Timing insights use only entries whose timestamp falls on the day being
+ * logged. Anything added later (back-dated) carries the time it was *logged*,
+ * not the time it was eaten, so it is excluded rather than trusted.
+ */
+export function timingInsights(days, isos) {
+  let analysed = 0, late = 0, backdated = 0;
+  const dinnerHours = [];
+
+  for (const iso of isos) {
+    const d = days[iso];
+    if (!d) continue;
+    for (const e of d.food || []) {
+      const when = new Date(e.ts || 0);
+      if (!e.ts || isoOf(when) !== iso) { backdated++; continue; }
+      analysed++;
+      const hour = when.getHours() + when.getMinutes() / 60;
+      if (hour >= 21) late++;
+      if (e.meal === 'Dinner') dinnerHours.push(hour);
+    }
+  }
+
+  dinnerHours.sort((a, b) => a - b);
+  const medianDinner = dinnerHours.length
+    ? dinnerHours[Math.floor(dinnerHours.length / 2)]
+    : null;
+
+  return {
+    analysed,
+    backdated,
+    late,
+    latePct: analysed ? (late / analysed) * 100 : 0,
+    medianDinner,
+  };
 }
 
 /* ---------- multi-day trends ---------- */

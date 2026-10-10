@@ -3,8 +3,9 @@ import * as store from './store.js';
 import {
   targets, totalsFor, buildAdvice, analyseTrends, trendInsights,
   activityBurn, metFor, dayProgress, round, clamp,
+  projectGoal, streaks, timingInsights,
 } from './nutrition.js';
-import { calorieChart, weightChart } from './charts.js';
+import { calorieChart, weightChart, macroCharts } from './charts.js';
 import {
   $, $$, h, toast, openSheet, closeSheet, initSheet,
   numberField, segmented, radioGroup, selectField, btn, fmtKcal, fmtQty, esc,
@@ -151,15 +152,86 @@ function renderToday() {
   setMacro('f', totals.fat, tg.fat);
 
   const isToday = date === store.today();
+  renderDayStats(tg, isToday);
+
   const advice = buildAdvice({
     totals, tg, profile, day,
     progress: isToday ? dayProgress() : 1,
     isToday, now: new Date(),
+    water: store.waterFor(date),
+    timing: timingInsights(store.getState().days, [date]),
   });
-  renderAdvice($('#advice'), advice, 2);
+  renderAdvice($('#advice'), advice, 1);
 
   renderMeals(day);
   renderActivityList(day);
+}
+
+const WATER_PRESETS = [250, 330, 500];
+
+/** Water intake and streaks, kept in one compact card. */
+function renderDayStats(tg, isToday) {
+  const wrap = $('#dayStats');
+  wrap.innerHTML = '';
+
+  const glasses = store.getDay(date).water || [];
+  const total = glasses.reduce((s, g) => s + g.ml, 0);
+  const pct = clamp((total / tg.water) * 100, 0, 100);
+
+  wrap.append(h('div', { class: 'ds-head' },
+    h('span', { class: 'ds-name' }, 'Water'),
+    h('span', { class: 'ds-val' }, `${total.toLocaleString()} / ${tg.water.toLocaleString()} ml`),
+  ));
+  wrap.append(h('div', { class: 'bar' },
+    h('div', { class: `bar-fill water${total >= tg.water ? ' hit' : ''}`, style: `width:${pct}%` }),
+  ));
+
+  const addChips = h('div', { class: 'chip-row' });
+  for (const ml of WATER_PRESETS) {
+    addChips.append(h('button', {
+      type: 'button', class: 'chip', onclick: () => { store.addWater(date, ml); toast(`+${ml} ml`); },
+    }, `+${ml}`));
+  }
+  addChips.append(h('button', { type: 'button', class: 'chip', onclick: openCustomWater }, 'Custom'));
+  for (const g of glasses.slice(-6).reverse()) {
+    addChips.append(h('button', {
+      type: 'button', class: 'chip chip-logged', title: `Remove ${g.ml} ml`,
+      onclick: () => store.removeWater(date, g.id),
+    }, `${g.ml} ✕`));
+  }
+  wrap.append(addChips);
+
+  const st = streaks(store.getState().days, tg, store.today());
+  wrap.append(h('div', { class: 'ds-streak' },
+    h('span', { class: 'ds-streak-n' }, `${st.logging} ${st.logging === 1 ? 'day' : 'days'} logged`),
+    h('span', { class: 'ds-streak-sep' }, '·'),
+    h('span', {}, st.onTarget > 0
+      ? `${st.onTarget} in a row on target`
+      : 'no on-target run yet'),
+  ));
+}
+
+function openCustomWater() {
+  const body = h('div', {});
+  const input = h('input', { type: 'number', inputmode: 'numeric', min: '1', max: '3000', value: '250' });
+  body.append(h('label', { class: 'field' },
+    h('span', { class: 'field-label' }, 'Amount (ml)'),
+    h('div', { class: 'field-row' }, input),
+  ));
+  body.append(h('div', { class: 'sheet-actions' },
+    btn('Add', {
+      kind: 'btn-primary',
+      onclick: () => {
+        const ml = parseInt(input.value, 10);
+        if (!Number.isFinite(ml) || ml <= 0) { toast('Enter an amount'); input.focus(); return; }
+        store.addWater(date, Math.min(ml, 3000));
+        toast(`+${ml} ml`);
+        closeSheet();
+      },
+    }),
+    btn('Cancel', { kind: 'btn-ghost', onclick: closeSheet }),
+  ));
+  openSheet(body, { title: 'Add water' });
 }
 
 function setMacro(prefix, value, target) {
@@ -176,51 +248,45 @@ function setMacro(prefix, value, target) {
  * Render advice cards. `limit` keeps the most important ones visible and
  * collapses the rest behind a toggle, so the meal log stays reachable.
  */
-function renderAdvice(container, list, limit = Infinity) {
+function adviceCard(a) {
+  return h('div', { class: `advice-item tone-${a.tone}` },
+    h('span', { class: 'advice-dot', 'aria-hidden': 'true' }, toneIcon[a.tone] || 'i'),
+    h('div', {},
+      h('div', { class: 'advice-title' }, a.title),
+      h('div', { class: 'advice-body' }, a.body),
+    ),
+  );
+}
+
+/**
+ * The most important insight is shown in full; the rest become one-line chips
+ * so every topic is visible without pushing the meal log off the screen.
+ * Tapping a chip expands it into the full card in place.
+ */
+function renderAdvice(container, list, lead = 1) {
   container.innerHTML = '';
   if (!list.length) return;
 
-  const visible = limit === Infinity ? list : list.slice(0, limit);
-  const hidden = list.length - visible.length;
+  const shown = list.slice(0, lead);
+  for (const a of shown) container.append(adviceCard(a));
 
-  const draw = (items) => {
-    for (const a of items) {
-      container.append(h('div', { class: `advice-item tone-${a.tone}` },
-        h('span', { class: 'advice-dot', 'aria-hidden': 'true' }, toneIcon[a.tone] || 'i'),
-        h('div', {},
-          h('div', { class: 'advice-title' }, a.title),
-          h('div', { class: 'advice-body' }, a.body),
-        ),
-      ));
-    }
-  };
+  const rest = list.slice(lead);
+  if (!rest.length) return;
 
-  draw(visible);
-
-  if (hidden > 0) {
-    let expanded = false;
-    const more = h('button', { class: 'advice-more', type: 'button' }, `Show ${hidden} more`);
-    more.addEventListener('click', () => {
-      expanded = !expanded;
-      container.querySelectorAll('.advice-item[data-extra]').forEach((n) => n.remove());
-      if (expanded) {
-        for (const a of list.slice(visible.length)) {
-          const el = h('div', { class: `advice-item tone-${a.tone}`, 'data-extra': '' },
-            h('span', { class: 'advice-dot', 'aria-hidden': 'true' }, toneIcon[a.tone] || 'i'),
-            h('div', {},
-              h('div', { class: 'advice-title' }, a.title),
-              h('div', { class: 'advice-body' }, a.body),
-            ),
-          );
-          container.insertBefore(el, more);
-        }
-        more.textContent = 'Show less';
-      } else {
-        more.textContent = `Show ${hidden} more`;
-      }
+  const chips = h('div', { class: 'advice-chips' });
+  for (const a of rest) {
+    const chip = h('button', { type: 'button', class: `advice-chip tone-${a.tone}` },
+      h('span', { class: 'ac-dot', 'aria-hidden': 'true' }, toneIcon[a.tone] || 'i'),
+      h('span', {}, a.title),
+    );
+    chip.addEventListener('click', () => {
+      const card = adviceCard(a);
+      chip.replaceWith(card);
+      chip.remove();
     });
-    container.append(more);
+    chips.append(chip);
   }
+  container.append(chips);
 }
 
 function renderMeals(day) {
@@ -376,6 +442,7 @@ function renderTrends() {
   const t = analyseTrends(series, weights, profile, tg);
 
   $('#calChart').innerHTML = calorieChart(series, tg.kcal);
+  $('#macroChart').innerHTML = macroCharts(series, tg);
 
   $('#avgGrid').innerHTML = '';
   const stats = [
@@ -395,12 +462,51 @@ function renderTrends() {
     ));
   }
 
-  $('#weightChart').innerHTML = weightChart(weights);
+  const goal = profile?.goalWeightKg || null;
+  const projection = projectGoal(weights, goal);
+
+  $('#weightChart').innerHTML = weightChart(weights, goal);
   const wt = $('#weightTrend');
   if (t.weightChange !== null) {
     wt.innerHTML = `<strong>${t.weightChange > 0 ? '+' : ''}${round(t.weightChange, 1)} kg</strong> total · ${t.weeklyRate > 0 ? '+' : ''}${round(t.weeklyRate, 2)} kg per week`;
   } else {
     wt.textContent = 'Log your weight to track progress.';
+  }
+
+  const proj = $('#weightProjection');
+  proj.innerHTML = '';
+  if (goal && projection) {
+    const toGo = Math.abs(projection.toGo).toFixed(1);
+    const rateTxt = projection.rate != null ? `${Math.abs(projection.rate).toFixed(2)} kg/week` : null;
+    let tone = 'info';
+    let text;
+    if (projection.status === 'reached') {
+      tone = 'good';
+      text = `You have reached your goal weight of ${weightOut(goal)} ${useMetric() ? 'kg' : 'lb'}.`;
+    } else if (projection.status === 'stalled') {
+      tone = 'warn';
+      text = `Your weight has held steady near ${weightOut(projection.current)} ${useMetric() ? 'kg' : 'lb'}. That is ${toGo} ${useMetric() ? 'kg' : 'lb'} from your goal — worth adjusting intake rather than logging harder.`;
+    } else if (projection.status === 'away') {
+      tone = 'warn';
+      text = `At ${rateTxt} your weight is moving away from your goal of ${weightOut(goal)} ${useMetric() ? 'kg' : 'lb'}. You are ${toGo} ${useMetric() ? 'kg' : 'lb'} from it.`;
+    } else if (projection.status === 'onTrack') {
+      tone = 'good';
+      const eta = new Date(projection.eta + 'T00:00:00');
+      const etaTxt = eta.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+      text = `At ${rateTxt} you would reach ${weightOut(goal)} ${useMetric() ? 'kg' : 'lb'} around ${etaTxt} — about ${Math.round(projection.days / 7)} weeks away.`;
+    } else {
+      tone = 'info';
+      text = `${toGo} ${useMetric() ? 'kg' : 'lb'} to your goal of ${weightOut(goal)} ${useMetric() ? 'kg' : 'lb'}. Keep logging your weight for at least a week to get a projection.`;
+    }
+    proj.append(h('div', { class: `proj-box tone-${tone}` },
+      h('span', { class: 'proj-title' }, 'Goal projection'),
+      h('span', { class: 'proj-body' }, text),
+    ));
+  } else if (!goal) {
+    proj.append(h('div', { class: 'proj-box tone-info' },
+      h('span', { class: 'proj-title' }, 'No goal weight set'),
+      h('span', { class: 'proj-body' }, 'Add one in Your profile to see how your current trend lines up against where you want to get to.'),
+    ));
   }
 
   renderAdvice($('#patterns'), trendInsights(t, tg, profile));
@@ -417,10 +523,12 @@ function renderYou() {
     <div class="ts-row"><span>Maintenance</span><b>${fmtKcal(tg.tdee)} kcal</b></div>
     <div class="ts-row"><span>Daily target</span><b>${fmtKcal(tg.kcal)} kcal</b></div>
     <div class="ts-row"><span>Goal</span><b>${esc(tg.goalLabel)} · ${esc(tg.goalRate)}</b></div>
+    ${profile?.goalWeightKg ? `<div class="ts-row"><span>Goal weight</span><b>${weightOut(profile.goalWeightKg)} ${useMetric() ? 'kg' : 'lb'}</b></div>` : ''}
     <div class="ts-row"><span>Protein</span><b>${tg.protein} g</b></div>
     <div class="ts-row"><span>Carbs</span><b>${tg.carbs} g</b></div>
     <div class="ts-row"><span>Fat</span><b>${tg.fat} g</b></div>
-    <div class="ts-row"><span>Fibre</span><b>${tg.fibre} g</b></div>`;
+    <div class="ts-row"><span>Fibre</span><b>${tg.fibre} g</b></div>
+    <div class="ts-row"><span>Water</span><b>${tg.water.toLocaleString()} ml</b></div>`;
 
   const customs = store.getCustomFoods();
   $('#customCount').textContent = customs.length
@@ -760,6 +868,11 @@ function openProfileSheet(existing) {
     label: `Weight (${useMetric() ? 'kg' : 'lb'})`, id: 'pWeight',
     value: weightOut(p.weightKg), step: '0.1',
   });
+  const goalWeight = numberField({
+    label: `Goal weight (${useMetric() ? 'kg' : 'lb'}) — optional`, id: 'pGoalW',
+    value: p.goalWeightKg ? weightOut(p.goalWeightKg) : '',
+    step: '0.1', presets: [],
+  });
 
   const live = h('div', { class: 'live-targets' });
 
@@ -767,11 +880,13 @@ function openProfileSheet(existing) {
     const by = parseInt(birthYear.input.value, 10) || 1990;
     const hv = parseFloat(height.input.value) || 170;
     const wv = parseFloat(weight.input.value) || 65;
+    const gv = parseFloat(goalWeight.input.value);
     return {
       sex: p.sex,
       birthYear: by,
       heightCm: useMetric() ? hv : hv * 2.54,
       weightKg: weightIn(wv),
+      goalWeightKg: Number.isFinite(gv) && gv > 0 ? weightIn(gv) : null,
       activity: p.activity,
       goal: p.goal,
     };
@@ -787,14 +902,14 @@ function openProfileSheet(existing) {
       <div class="lt-row"><span>Expected pace</span><b>${esc(t.goalRate)}</b></div>`;
   }
 
-  for (const f of [birthYear, height, weight]) f.input.addEventListener('input', refresh);
+  for (const f of [birthYear, height, weight, goalWeight]) f.input.addEventListener('input', refresh);
 
   body.append(h('span', { class: 'field-label' }, 'Sex (used by the metabolic formula)'));
   body.append(radioGroup('pSex', [{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }], p.sex));
   body.querySelectorAll('input[name="pSex"]').forEach((i) =>
     i.addEventListener('change', () => { p.sex = i.value; refresh(); }));
 
-  body.append(birthYear, height, weight);
+  body.append(birthYear, height, weight, goalWeight);
 
   body.append(h('span', { class: 'field-label' }, 'Activity level'));
   const actField = selectField({
@@ -821,6 +936,11 @@ function openProfileSheet(existing) {
         }
         if (c.heightCm < 100 || c.heightCm > 250) { toast('Check your height'); height.input.focus(); return; }
         if (c.weightKg < 30 || c.weightKg > 300) { toast('Check your weight'); weight.input.focus(); return; }
+        if (c.goalWeightKg != null && (c.goalWeightKg < 30 || c.goalWeightKg > 300)) {
+          toast('Goal weight must be between 30 and 300');
+          goalWeight.input.focus();
+          return;
+        }
         store.saveProfile(c);
         toast('Targets updated');
         closeSheet();
