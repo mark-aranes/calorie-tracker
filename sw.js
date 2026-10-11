@@ -8,7 +8,7 @@
  * (a rebuild from scratch, e.g. after changing the precache list).
  */
 
-const VERSION = 'ct-v2';
+const VERSION = 'ct-v3';
 const SHELL = [
   './',
   './index.html',

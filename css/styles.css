@@ -570,6 +570,28 @@ main {
 .fab-circle svg { width: 26px; height: 26px; stroke-width: 2.6; }
 .tab-fab.active .fab-circle { transform: scale(1.06); }
 
+/* ---------- update bar ---------- */
+
+.update-bar {
+  position: fixed; z-index: 130;
+  left: 12px; right: 12px;
+  bottom: calc(var(--tabbar-h) + var(--safe-b) + 10px);
+  max-width: 616px; margin: 0 auto;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  font-size: .86rem; font-weight: 560;
+}
+.update-bar > span:first-child {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.update-bar .btn { flex: 0 0 auto; width: auto; padding: 8px 18px; min-height: 44px; }
+.update-bar .icon-btn { flex: 0 0 auto; width: 40px; height: 40px; }
+
 /* ---------- confirm dialog ---------- */
 
 .dialog-backdrop {
@@ -738,7 +760,9 @@ body.sheet-open .sheet-backdrop { opacity: 1; pointer-events: auto; }
   max-width: calc(100% - 32px); text-align: center;
   animation: toast-in .22s ease;
 }
-@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 10px); } }
+/* Transform only: if the browser stops producing frames the toast must
+   still be fully visible. */
+@keyframes toast-in { from { transform: translate(-50%, 10px); } }
 
 /* ---------- responsive ---------- */
 

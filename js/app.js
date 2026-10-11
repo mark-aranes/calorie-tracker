@@ -1352,10 +1352,54 @@ function initServiceWorker() {
     return;
   }
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((err) => {
-      console.warn('SW registration failed', err);
-      warn('Offline caching could not start. You can still use the app, but it needs a connection to open.');
-    });
+    navigator.serviceWorker.register('./sw.js')
+      .then((reg) => watchForUpdates(reg))
+      .catch((err) => {
+        console.warn('SW registration failed', err);
+        warn('Offline caching could not start. You can still use the app, but it needs a connection to open.');
+      });
+  });
+}
+
+let updateDismissed = false;
+
+function showUpdateBar() {
+  if (updateDismissed) return;
+  const bar = $('#updateBar');
+  if (bar) bar.hidden = false;
+}
+
+/**
+ * With pure stale-while-revalidate a deploy only reaches the launch *after* the
+ * one that fetched it, because the current page has already run its copy of the
+ * code. Surfacing that means nobody is left wondering why their fix is not
+ * showing yet.
+ */
+function watchForUpdates(reg) {
+  const bar = $('#updateBar');
+
+  const ready = (worker) => {
+    // On a first install there is no previous version to update from.
+    if (!worker || !navigator.serviceWorker.controller) return;
+    if (worker.state === 'installed' || worker.state === 'activated') showUpdateBar();
+  };
+
+  if (reg.waiting) showUpdateBar();
+  reg.addEventListener('updatefound', () => ready(reg.installing));
+
+  // Re-check when the app returns to the foreground, the natural moment for a
+  // fresh deploy to have landed.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reg.update().catch(() => {});
+  });
+
+  $('#updateReload').addEventListener('click', () => {
+    // The new worker has already claimed, so a reload reads the fresh cache.
+    location.reload();
+  });
+  $('#updateDismiss').addEventListener('click', () => {
+    updateDismissed = true;
+    if (bar) bar.hidden = true;
   });
 }
 
