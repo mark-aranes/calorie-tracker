@@ -1038,15 +1038,20 @@ function slideBetween(fromEl, toEl, forward) {
   );
   liveAnims.push(out);
 
+  // The incoming screen holds its offset, faded state for the whole delay
+  // (fill: 'backwards'). Without it there is a 120ms window where it is simply
+  // visible at full opacity, then jumps back to transparent and slides in again
+  // - which reads as a flicker on every tab change.
+  liveAnims.push(toEl.animate(
+    [{ transform: `translateX(${dx * 20}%)`, opacity: 0 },
+     { transform: 'translateX(0)', opacity: 1 }],
+    { duration: 230, delay: 120, easing: EASE, fill: 'backwards' },
+  ));
+
   swapTimer = setTimeout(() => {
     fromEl.hidden = true;
     fromEl.classList.remove('leaving');
     out.cancel();
-    liveAnims.push(toEl.animate(
-      [{ transform: `translateX(${dx * 20}%)`, opacity: 0 },
-       { transform: 'translateX(0)', opacity: 1 }],
-      { duration: 230, easing: EASE },
-    ));
   }, 120);
 }
 

@@ -592,11 +592,16 @@ main {
   padding: 20px 18px 16px;
   text-align: center;
   box-shadow: 0 24px 60px rgba(0, 0, 0, .32);
-  transition: transform .22s cubic-bezier(.32,.72,0,1), opacity .22s ease, visibility .22s;
+  /* Same reasoning as .sheet: switch visibility instantly rather than
+     animating it, so the dialog can never be left invisible. */
+  transition: transform .22s cubic-bezier(.32,.72,0,1), opacity .22s ease,
+              visibility 0s linear .22s;
 }
 .dialog.show {
   opacity: 1; visibility: visible; pointer-events: auto;
   transform: translate(-50%, -50%) scale(1);
+  transition: transform .22s cubic-bezier(.32,.72,0,1), opacity .22s ease,
+              visibility 0s linear 0s;
 }
 .dialog h2 { margin: 0 0 8px; font-size: 1.05rem; line-height: 1.35; }
 .dialog p { margin: 0 0 18px; font-size: .87rem; color: var(--text-dim); }
@@ -613,6 +618,9 @@ main {
 }
 body.sheet-open .sheet-backdrop { opacity: 1; pointer-events: auto; }
 
+/* visibility is deliberately NOT animated: transitioning it means the sheet can
+   stay hidden until the browser produces a frame. Instead it switches instantly
+   when opening, and is delayed until after the slide on close. */
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
   max-height: 90vh;
@@ -623,11 +631,19 @@ body.sheet-open .sheet-backdrop { opacity: 1; pointer-events: auto; }
   padding: 8px 16px 0;
   box-shadow: 0 -8px 30px rgba(0, 0, 0, .25);
   transform: translateY(100%);
+  opacity: 0;
   visibility: hidden; pointer-events: none;
-  transition: transform .26s cubic-bezier(.32, .72, 0, 1), visibility .26s;
+  transition: transform .26s cubic-bezier(.32,.72,0,1), opacity .18s ease,
+              visibility 0s linear .26s;
   max-width: 640px; margin: 0 auto;
 }
-.sheet.open { transform: translateY(0); visibility: visible; pointer-events: auto; }
+.sheet.open {
+  transform: translateY(0);
+  opacity: 1;
+  visibility: visible; pointer-events: auto;
+  transition: transform .26s cubic-bezier(.32,.72,0,1), opacity .18s ease,
+              visibility 0s linear 0s;
+}
 .sheet-handle {
   width: 38px; height: 4px; border-radius: 999px;
   background: var(--border); margin: 4px auto 10px; flex: 0 0 auto;

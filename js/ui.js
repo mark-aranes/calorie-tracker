@@ -78,7 +78,7 @@ export function confirmDialog({ title, body = '', yes = 'Yes', no = 'No', danger
     $('#dialogBackdrop').classList.add('show');
     document.body.classList.add('dialog-open');
     // Focus the safe option so an accidental double-tap cannot exit.
-    requestAnimationFrame(() => $('#dlgNo').focus());
+    $('#dlgNo').focus();
   });
 }
 
@@ -110,8 +110,15 @@ export function openSheet(content, { title } = {}) {
   body.innerHTML = '';
   if (title) body.append(h('h2', { class: 'sheet-title' }, title));
   body.append(typeof content === 'string' ? h('div', { html: content }) : content);
-  sheet.scrollTop = 0;
-  requestAnimationFrame(() => sheet.classList.add('open'));
+
+  // Force layout so the closed state is committed before the class flips,
+  // which is what makes the slide-in transition run. This deliberately does
+  // NOT use requestAnimationFrame: rAF only fires when the browser produces a
+  // frame, which can be indefinite on a settled page. A sheet that never
+  // receives "open" stays invisible while its backdrop still swallows every
+  // tap, leaving the user staring at a blank screen.
+  void sheet.offsetHeight;
+  sheet.classList.add('open');
   document.body.classList.add('sheet-open');
   return body;
 }
